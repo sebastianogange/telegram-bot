@@ -2,6 +2,7 @@ import telebot
 import os
 import time
 import requests
+from datetime import datetime
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = int(os.getenv("CHAT_ID"))
@@ -9,9 +10,19 @@ API_KEY = os.getenv("API_KEY")
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
+# 💰 BANKROLL
+bankroll = 100
 profit = 0
 giocate = 0
+max_giocate = 2
+
+# 📊 LIMITI
+STOP_LOSS = -5
+TAKE_PROFIT = 5
+
+selected_matches = []
 matches_state = {}
+last_day = None
 
 LEAGUES_ALLOWED = [39, 140, 135, 78, 61]
 
@@ -22,7 +33,6 @@ def send(msg):
 def calcola_xg(tiri, in_porta):
     return (tiri * 0.05) + (in_porta * 0.15)
 
-# 🤖 probabilità
 def prob_goal(xg):
     if xg >= 1.5: return 80
     if xg >= 1.2: return 70
@@ -30,18 +40,68 @@ def prob_goal(xg):
     if xg >= 0.8: return 50
     return 30
 
-# 📲 COMANDI
-@bot.message_handler(commands=['profit'])
-def cmd_profit(msg):
-    bot.reply_to(msg, f"💰 Profit: {profit}u")
+# 💰 stake dinamico
+def calcola_stake(prob):
+    if prob >= 70:
+        return round(bankroll * 0.015, 2)
+    elif prob >= 50:
+        return round(bankroll * 0.007, 2)
+    return 0
 
-@bot.message_handler(commands=['status'])
-def cmd_status(msg):
-    bot.reply_to(msg, f"📊 Giocate: {giocate}\n💰 Profit: {profit}u")
+# 📅 selezione
+def seleziona_partite():
+    global selected_matches
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    url = f"https://v3.football.api-sports.io/fixtures?date={today}"
+    headers = {"x-apisports-key": API_KEY}
+
+    try:
+        data = requests.get(url, headers=headers).json()
+    except:
+        return
+
+    matches = []
+
+    for m in data.get("response", []):
+        if m["league"]["id"] not in LEAGUES_ALLOWED:
+            continue
+
+        matches.append({
+            "id": m["fixture"]["id"],
+            "home": m["teams"]["home"]["name"],
+            "away": m["teams"]["away"]["name"]
+        })
+
+    selected_matches = matches[:3]
+
+    msg = "📅 STRATEGIA GIORNALIERA\n\n"
+
+    for i, m in enumerate(selected_matches):
+        msg += f"""{i+1}) {m['home']} - {m['away']}
+
+👉 Over 0.5 HT
+👉 Se 0-0 → Over 1.5 2T
+
+\n"""
+
+    send(msg)
 
 # 🔴 LIVE
 def check_matches():
-    global giocate, profit
+    global giocate, profit, bankroll
+
+    # 🚫 STOP CONDIZIONI
+    if profit <= STOP_LOSS:
+        send("🛑 STOP LOSS raggiunto → STOP giornata")
+        return
+
+    if profit >= TAKE_PROFIT:
+        send("🎯 TAKE PROFIT raggiunto → STOP giornata")
+        return
+
+    if giocate >= max_giocate:
+        return
 
     url = "https://v3.football.api-sports.io/fixtures?live=all"
     headers = {"x-apisports-key": API_KEY}
@@ -52,23 +112,22 @@ def check_matches():
         return
 
     for m in data.get("response", []):
-        league = m["league"]["id"]
-        if league not in LEAGUES_ALLOWED:
-            continue
 
         fid = m["fixture"]["id"]
+
+        if fid not in [x["id"] for x in selected_matches]:
+            continue
+
         minute = m["fixture"]["status"]["elapsed"]
+        goals = (m["goals"]["home"] or 0) + (m["goals"]["away"] or 0)
 
         home = m["teams"]["home"]["name"]
         away = m["teams"]["away"]["name"]
-
-        goals = (m["goals"]["home"] or 0) + (m["goals"]["away"] or 0)
 
         try:
             stats = m["statistics"][0]
             tiri = stats["shots"]["total"] or 0
             in_porta = stats["shots"]["on"] or 0
-            corner = stats["corners"] or 0
         except:
             continue
 
@@ -76,38 +135,20 @@ def check_matches():
         prob = prob_goal(xg)
 
         if fid not in matches_state:
-            matches_state[fid] = {
-                "sent": False,
-                "entered": False,
-                "last_xg": xg,
-                "home": home,
-                "away": away,
-                "stake": 0
-            }
+            matches_state[fid] = {"entered": False}
 
         state = matches_state[fid]
 
-        # 🚫 partita morta
-        if minute == 45 and goals == 0 and tiri < 6:
-            send(f"❌ {home}-{away}\nPartita lenta → NO BET")
-            state["sent"] = True
-            continue
-
-        # 🔥 ENTRY TIMING (50-60)
+        # ingresso
         if 50 <= minute <= 60 and not state["entered"]:
 
-            if prob >= 70:
-                stake = 1.5
-                segnale = "🟢 ENTRA ORA"
-            elif prob >= 50:
-                stake = 0.7
-                segnale = "🟡 ENTRA RIDOTTO"
-            else:
+            stake = calcola_stake(prob)
+
+            if stake == 0:
                 continue
 
             giocate += 1
             state["entered"] = True
-            state["stake"] = stake
 
             send(f"""⚽ {home}-{away}
 
@@ -115,47 +156,24 @@ def check_matches():
 📈 xG: {xg}
 🤖 Prob: {prob}%
 
-🔥 {segnale}
+👉 GIOCA:
+Over 1.5 Secondo Tempo
+
 💰 Stake: {stake}u
 """)
 
-        # 🔄 UPDATE DINAMICO
-        if state["entered"] and xg > state["last_xg"] + 0.3:
-            send(f"""📈 UPDATE
+        # risultato simulato
+        if state["entered"] and minute >= 90:
 
-{home}-{away}
-xG in crescita: {state['last_xg']} → {xg}
-
-🔥 partita si accende
-""")
-            state["last_xg"] = xg
-
-        # ⚠️ rischio
-        if state["entered"] and minute > 70 and xg < 0.8:
-            send(f"""⚠️ ATTENZIONE
-
-{home}-{away}
-ritmo basso → rischio alto
-""")
-
-        # ⚽ GOL
-        if state["entered"] and goals >= 1:
-            send(f"""⚽ GOL!
-
-{home}-{away}
-
-👉 valuta cashout o lascia correre
-""")
-            state["entered"] = False
-
-        # 📊 RISULTATO
-        if minute >= 90 and state["stake"] > 0:
+            stake = calcola_stake(prob)
 
             if goals >= 2:
-                profit += state["stake"]
+                profit += stake
+                bankroll += stake
                 result = "✅ WIN"
             else:
-                profit -= state["stake"]
+                profit -= stake
+                bankroll -= stake
                 result = "❌ LOSS"
 
             send(f"""📊 RISULTATO
@@ -163,11 +181,19 @@ ritmo basso → rischio alto
 {home}-{away}
 {result}
 
-💰 Profit: {profit}u
+💰 Profit: {profit}
+🏦 Bankroll: {bankroll}
 """)
 
-            del matches_state[fid]
+            state["entered"] = False
 
+# ⏱ LOOP
 while True:
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    if last_day != today:
+        seleziona_partite()
+        last_day = today
+
     check_matches()
     time.sleep(60)
