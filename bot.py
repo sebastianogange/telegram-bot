@@ -26,10 +26,10 @@ selected_matches = []
 matches_state = {}
 last_day_sent = None
 
-# 🎯 10 campionati
+# 🎯 CAMPIONATI
 ALL_LEAGUES = [39, 140, 135, 78, 61, 88, 94, 144, 203, 207]
 
-# 📩 SEND SICURO
+# 📩 INVIO SICURO
 def send(msg):
     try:
         bot.send_message(CHAT_ID, msg)
@@ -59,11 +59,19 @@ def calcola_stake(prob):
 # 📲 COMANDI
 @bot.message_handler(commands=['start'])
 def start(msg):
-    bot.reply_to(msg, "🤖 Bot attivo\nComandi: /status /reset")
+    bot.reply_to(msg, "🤖 Bot attivo\nComandi: /status /profit /reset")
 
 @bot.message_handler(commands=['status'])
 def status(msg):
-    bot.reply_to(msg, f"📊 Giocate: {giocate}\n💰 Profit: {profit}\n🏦 Bankroll: {bankroll}")
+    bot.reply_to(msg, f"""📊 Giocate: {giocate}
+💰 Profit: {profit}
+🏦 Bankroll: {bankroll}""")
+
+@bot.message_handler(commands=['profit'])
+def profit_cmd(msg):
+    bot.reply_to(msg, f"""💰 Profit: {profit}
+🏦 Bankroll: {bankroll}
+📊 Giocate: {giocate}""")
 
 @bot.message_handler(commands=['reset'])
 def reset(msg):
@@ -73,7 +81,7 @@ def reset(msg):
     bankroll = 100
     bot.reply_to(msg, "♻️ Reset completato")
 
-# 🧠 AUTO FILTRO CAMPIONATI
+# 🧠 AUTO FILTRO
 def filtra_campionati():
     try:
         today = datetime.now().strftime("%Y-%m-%d")
@@ -118,7 +126,7 @@ def filtra_campionati():
         print("Errore filtro:", e)
         return ALL_LEAGUES
 
-# 📅 SELEZIONE PARTITE
+# 📅 SELEZIONE
 def seleziona_partite():
     global selected_matches
 
@@ -214,12 +222,10 @@ def check_matches():
 
             state = matches_state[fid]
 
-            # ❌ NO BET
             if minute == 45 and goals == 0 and tiri < 6:
                 send(f"❌ {home}-{away} → NO BET")
                 continue
 
-            # 🔥 INGRESSO
             if 50 <= minute <= 60 and not state["entered"]:
 
                 stake = calcola_stake(prob)
@@ -241,7 +247,6 @@ def check_matches():
 💰 Stake: {stake}
 """)
 
-            # 📊 RISULTATO
             if state["entered"] and minute >= 90:
 
                 stake = state.get("stake", 0)
@@ -277,7 +282,6 @@ def loop_live():
         now = datetime.now()
         today = now.strftime("%Y-%m-%d")
 
-        # ⏰ INVIO 11:30
         if now.hour == 11 and now.minute == 30 and last_day_sent != today:
             seleziona_partite()
             last_day_sent = today
@@ -288,6 +292,6 @@ def loop_live():
 # ▶️ AVVIO
 threading.Thread(target=loop_live).start()
 
-print("✅ Bot avviato correttamente")
+print("✅ Bot attivo")
 
 bot.infinity_polling()
