@@ -2,6 +2,7 @@ import telebot
 import os
 import time
 import requests
+import threading
 from datetime import datetime
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -16,7 +17,6 @@ profit = 0
 giocate = 0
 max_giocate = 2
 
-# 📊 LIMITI
 STOP_LOSS = -5
 TAKE_PROFIT = 5
 
@@ -48,7 +48,28 @@ def calcola_stake(prob):
         return round(bankroll * 0.007, 2)
     return 0
 
-# 📅 selezione
+# 📲 COMANDI TELEGRAM
+@bot.message_handler(commands=['start'])
+def start(msg):
+    bot.reply_to(msg, "🤖 Bot attivo\nUsa /status /profit /reset")
+
+@bot.message_handler(commands=['status'])
+def status(msg):
+    bot.reply_to(msg, f"📊 Giocate: {giocate}\n💰 Profit: {profit}\n🏦 Bankroll: {bankroll}")
+
+@bot.message_handler(commands=['profit'])
+def profit_cmd(msg):
+    bot.reply_to(msg, f"💰 Profit: {profit}")
+
+@bot.message_handler(commands=['reset'])
+def reset(msg):
+    global profit, giocate, bankroll
+    profit = 0
+    giocate = 0
+    bankroll = 100
+    bot.reply_to(msg, "♻️ Reset completato")
+
+# 📅 SELEZIONE PARTITE
 def seleziona_partite():
     global selected_matches
 
@@ -75,13 +96,16 @@ def seleziona_partite():
 
     selected_matches = matches[:3]
 
+    if not selected_matches:
+        return
+
     msg = "📅 STRATEGIA GIORNALIERA\n\n"
 
     for i, m in enumerate(selected_matches):
         msg += f"""{i+1}) {m['home']} - {m['away']}
 
-👉 Over 0.5 HT
-👉 Se 0-0 → Over 1.5 2T
+👉 Over 0.5 Primo Tempo
+👉 Se 0-0 → Over 1.5 Secondo Tempo
 
 \n"""
 
@@ -91,13 +115,12 @@ def seleziona_partite():
 def check_matches():
     global giocate, profit, bankroll
 
-    # 🚫 STOP CONDIZIONI
     if profit <= STOP_LOSS:
-        send("🛑 STOP LOSS raggiunto → STOP giornata")
+        send("🛑 STOP LOSS raggiunto")
         return
 
     if profit >= TAKE_PROFIT:
-        send("🎯 TAKE PROFIT raggiunto → STOP giornata")
+        send("🎯 TAKE PROFIT raggiunto")
         return
 
     if giocate >= max_giocate:
@@ -135,11 +158,16 @@ def check_matches():
         prob = prob_goal(xg)
 
         if fid not in matches_state:
-            matches_state[fid] = {"entered": False}
+            matches_state[fid] = {"entered": False, "last_xg": xg}
 
         state = matches_state[fid]
 
-        # ingresso
+        # ❌ partita morta
+        if minute == 45 and goals == 0 and tiri < 6:
+            send(f"❌ {home}-{away}\nNO BET")
+            continue
+
+        # 🔥 ingresso
         if 50 <= minute <= 60 and not state["entered"]:
 
             stake = calcola_stake(prob)
@@ -159,10 +187,10 @@ def check_matches():
 👉 GIOCA:
 Over 1.5 Secondo Tempo
 
-💰 Stake: {stake}u
+💰 Stake: {stake}
 """)
 
-        # risultato simulato
+        # 📊 risultato
         if state["entered"] and minute >= 90:
 
             stake = calcola_stake(prob)
@@ -187,13 +215,20 @@ Over 1.5 Secondo Tempo
 
             state["entered"] = False
 
-# ⏱ LOOP
-while True:
-    today = datetime.now().strftime("%Y-%m-%d")
+# 🔁 LOOP THREAD
+def loop_live():
+    global last_day
 
-    if last_day != today:
-        seleziona_partite()
-        last_day = today
+    while True:
+        today = datetime.now().strftime("%Y-%m-%d")
 
-    check_matches()
-    time.sleep(60)
+        if last_day != today:
+            seleziona_partite()
+            last_day = today
+
+        check_matches()
+        time.sleep(60)
+
+# ▶️ AVVIO
+threading.Thread(target=loop_live).start()
+bot.infinity_polling()
