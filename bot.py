@@ -24,7 +24,8 @@ selected_matches = []
 matches_state = {}
 last_day = None
 
-LEAGUES_ALLOWED = [39, 140, 135, 78, 61]
+# 🎯 10 campionati
+ALL_LEAGUES = [39,140,135,78,61,88,94,144,203,207]
 
 def send(msg):
     bot.send_message(CHAT_ID, msg)
@@ -40,7 +41,7 @@ def prob_goal(xg):
     if xg >= 0.8: return 50
     return 30
 
-# 💰 stake dinamico
+# 💰 stake
 def calcola_stake(prob):
     if prob >= 70:
         return round(bankroll * 0.015, 2)
@@ -48,30 +49,54 @@ def calcola_stake(prob):
         return round(bankroll * 0.007, 2)
     return 0
 
-# 📲 COMANDI TELEGRAM
-@bot.message_handler(commands=['start'])
-def start(msg):
-    bot.reply_to(msg, "🤖 Bot attivo\nUsa /status /profit /reset")
+# 🧠 AUTO FILTRO CAMPIONATI
+def filtra_campionati():
+    today = datetime.now().strftime("%Y-%m-%d")
+    url = f"https://v3.football.api-sports.io/fixtures?date={today}"
+    headers = {"x-apisports-key": API_KEY}
 
-@bot.message_handler(commands=['status'])
-def status(msg):
-    bot.reply_to(msg, f"📊 Giocate: {giocate}\n💰 Profit: {profit}\n🏦 Bankroll: {bankroll}")
+    try:
+        data = requests.get(url, headers=headers).json()
+    except:
+        return ALL_LEAGUES
 
-@bot.message_handler(commands=['profit'])
-def profit_cmd(msg):
-    bot.reply_to(msg, f"💰 Profit: {profit}")
+    league_stats = {}
 
-@bot.message_handler(commands=['reset'])
-def reset(msg):
-    global profit, giocate, bankroll
-    profit = 0
-    giocate = 0
-    bankroll = 100
-    bot.reply_to(msg, "♻️ Reset completato")
+    for m in data.get("response", []):
+        league = m["league"]["id"]
 
-# 📅 SELEZIONE PARTITE
+        if league not in ALL_LEAGUES:
+            continue
+
+        goals = (m["goals"]["home"] or 0) + (m["goals"]["away"] or 0)
+
+        if league not in league_stats:
+            league_stats[league] = {"matches":0,"goals":0}
+
+        league_stats[league]["matches"] += 1
+        league_stats[league]["goals"] += goals
+
+    migliori = []
+
+    for l, stats in league_stats.items():
+        if stats["matches"] < 3:
+            continue
+
+        media = stats["goals"] / stats["matches"]
+
+        if media >= 2.2:
+            migliori.append(l)
+
+    if not migliori:
+        return ALL_LEAGUES[:5]
+
+    return migliori
+
+# 📅 selezione partite
 def seleziona_partite():
     global selected_matches
+
+    leagues = filtra_campionati()
 
     today = datetime.now().strftime("%Y-%m-%d")
     url = f"https://v3.football.api-sports.io/fixtures?date={today}"
@@ -85,7 +110,7 @@ def seleziona_partite():
     matches = []
 
     for m in data.get("response", []):
-        if m["league"]["id"] not in LEAGUES_ALLOWED:
+        if m["league"]["id"] not in leagues:
             continue
 
         matches.append({
@@ -96,16 +121,15 @@ def seleziona_partite():
 
     selected_matches = matches[:3]
 
-    if not selected_matches:
-        return
+    msg = "📅 STRATEGIA + AUTO FILTRO\n\n"
 
-    msg = "📅 STRATEGIA GIORNALIERA\n\n"
+    msg += f"Campionati attivi: {len(leagues)}\n\n"
 
     for i, m in enumerate(selected_matches):
         msg += f"""{i+1}) {m['home']} - {m['away']}
 
-👉 Over 0.5 Primo Tempo
-👉 Se 0-0 → Over 1.5 Secondo Tempo
+👉 Over 0.5 HT
+👉 Se 0-0 → Over 1.5 2T
 
 \n"""
 
@@ -116,11 +140,11 @@ def check_matches():
     global giocate, profit, bankroll
 
     if profit <= STOP_LOSS:
-        send("🛑 STOP LOSS raggiunto")
+        send("🛑 STOP LOSS")
         return
 
     if profit >= TAKE_PROFIT:
-        send("🎯 TAKE PROFIT raggiunto")
+        send("🎯 TAKE PROFIT")
         return
 
     if giocate >= max_giocate:
@@ -158,16 +182,14 @@ def check_matches():
         prob = prob_goal(xg)
 
         if fid not in matches_state:
-            matches_state[fid] = {"entered": False, "last_xg": xg}
+            matches_state[fid] = {"entered": False}
 
         state = matches_state[fid]
 
-        # ❌ partita morta
         if minute == 45 and goals == 0 and tiri < 6:
-            send(f"❌ {home}-{away}\nNO BET")
+            send(f"❌ {home}-{away} NO BET")
             continue
 
-        # 🔥 ingresso
         if 50 <= minute <= 60 and not state["entered"]:
 
             stake = calcola_stake(prob)
@@ -184,13 +206,11 @@ def check_matches():
 📈 xG: {xg}
 🤖 Prob: {prob}%
 
-👉 GIOCA:
-Over 1.5 Secondo Tempo
+👉 Over 1.5 Secondo Tempo
 
 💰 Stake: {stake}
 """)
 
-        # 📊 risultato
         if state["entered"] and minute >= 90:
 
             stake = calcola_stake(prob)
@@ -215,7 +235,7 @@ Over 1.5 Secondo Tempo
 
             state["entered"] = False
 
-# 🔁 LOOP THREAD
+# 🔁 LOOP
 def loop_live():
     global last_day
 
@@ -229,6 +249,5 @@ def loop_live():
         check_matches()
         time.sleep(60)
 
-# ▶️ AVVIO
 threading.Thread(target=loop_live).start()
 bot.infinity_polling()
