@@ -21,13 +21,14 @@ app = Flask(__name__)
 tz = ZoneInfo("Europe/Rome")
 
 # ==============================
-# 📲 MENU
+# 📲 MENU COMANDI
 # ==============================
 bot.set_my_commands([
     telebot.types.BotCommand("start", "Avvia bot"),
     telebot.types.BotCommand("status", "Stato bot"),
     telebot.types.BotCommand("profit", "Profit"),
-    telebot.types.BotCommand("api", "Uso API")
+    telebot.types.BotCommand("api", "Uso API"),
+    telebot.types.BotCommand("reset", "Reset sistema")
 ])
 
 # ==============================
@@ -115,7 +116,7 @@ def filtra_leghe():
     return migliori if migliori else ALL_LEAGUES[:5]
 
 # ==============================
-# 📅 SELEZIONE
+# 📅 SELEZIONE PARTITE
 # ==============================
 def seleziona():
     global selected_matches
@@ -231,10 +232,34 @@ def webhook():
 def start(msg):
     bot.reply_to(msg, "🤖 BOT PRO ATTIVO")
 
+@bot.message_handler(commands=['status'])
+def status(msg):
+    bot.reply_to(msg, f"""📊 STATO
+
+Giocate: {giocate}
+💰 Profit: {round(profit,2)}
+🏦 Bankroll: {round(bankroll,2)}""")
+
+@bot.message_handler(commands=['profit'])
+def profit_cmd(msg):
+    bot.reply_to(msg, f"""💰 PROFIT
+
+Profit: {round(profit,2)}
+Bankroll: {round(bankroll,2)}
+Giocate: {giocate}""")
+
 @bot.message_handler(commands=['api'])
 def api(msg):
     perc = round((api_requests/MAX_REQUESTS)*100,1)
     bot.reply_to(msg, f"{api_requests}/{MAX_REQUESTS} ({perc}%)")
+
+@bot.message_handler(commands=['reset'])
+def reset(msg):
+    global profit, giocate, bankroll
+    profit = 0
+    giocate = 0
+    bankroll = 100
+    bot.reply_to(msg, "♻️ Reset completato")
 
 # ==============================
 # ▶️ START
