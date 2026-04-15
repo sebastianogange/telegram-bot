@@ -26,6 +26,7 @@ api_requests = 0
 MAX_REQUESTS = 7500
 
 last_chat_id = None
+loop_started = False  # ✅ evita duplicazione loop
 
 # ==============================
 # API
@@ -93,7 +94,7 @@ def loop():
 # ==============================
 @bot.message_handler(func=lambda m: True)
 def handle(msg):
-    global profit, bankroll, giocate, last_chat_id
+    global profit, bankroll, giocate, last_chat_id, loop_started
 
     last_chat_id = msg.chat.id
 
@@ -108,8 +109,10 @@ def handle(msg):
     if text.startswith("/start"):
         bot.reply_to(msg, "🤖 Bot attivo")
 
-        # avvia loop UNA sola volta
-        threading.Thread(target=loop, daemon=True).start()
+        # ✅ avvia loop UNA SOLA VOLTA
+        if not loop_started:
+            threading.Thread(target=loop, daemon=True).start()
+            loop_started = True
 
     elif text.startswith("/profit"):
         bot.reply_to(msg, f"💰 Profit: {profit}")
@@ -135,7 +138,7 @@ Profit: {profit}
         bot.reply_to(msg, f"Ricevuto: {text}")
 
 # ==============================
-# START (CORRETTO)
+# START
 # ==============================
 print("🚀 BOT STABILE ATTIVO")
 
