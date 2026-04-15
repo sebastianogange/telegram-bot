@@ -13,6 +13,15 @@ API_KEY = os.getenv("API_KEY")
 
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
+# 📲 REGISTRA COMANDI TELEGRAM
+bot.set_my_commands([
+    telebot.types.BotCommand("start", "Avvia il bot"),
+    telebot.types.BotCommand("status", "Stato bot"),
+    telebot.types.BotCommand("profit", "Profit attuale"),
+    telebot.types.BotCommand("api", "Utilizzo API"),
+    telebot.types.BotCommand("reset", "Reset sistema")
+])
+
 tz = ZoneInfo("Europe/Rome")
 
 # 💰 BANKROLL
@@ -63,7 +72,6 @@ def api_call(url):
         response = requests.get(url, headers=headers)
         api_requests += 1
 
-        # alert 80%
         if api_requests >= MAX_REQUESTS * 0.8:
             send(f"⚠️ API usage alto: {api_requests}/{MAX_REQUESTS}")
 
@@ -74,7 +82,7 @@ def api_call(url):
         return {}
 
 # ==============================
-# 🔄 RESET API GIORNALIERO
+# 🔄 RESET API
 # ==============================
 def reset_requests():
     global api_requests, last_reset_day
@@ -86,7 +94,7 @@ def reset_requests():
         last_reset_day = today
 
 # ==============================
-# 🧠 xG + PROB
+# 🧠 xG
 # ==============================
 def calcola_xg(tiri, in_porta):
     return (tiri * 0.05) + (in_porta * 0.15)
@@ -116,7 +124,7 @@ def calcola_stake(prob):
 # ==============================
 @bot.message_handler(commands=['start'])
 def start(msg):
-    bot.reply_to(msg, "🤖 Bot attivo\nComandi: /status /profit /api /reset")
+    bot.reply_to(msg, "🤖 Bot attivo")
 
 @bot.message_handler(commands=['status'])
 def status(msg):
@@ -165,10 +173,7 @@ def filtra_campionati_storico():
         if len(matches) < 10:
             continue
 
-        goals = 0
-
-        for m in matches:
-            goals += (m["goals"]["home"] or 0) + (m["goals"]["away"] or 0)
+        goals = sum((m["goals"]["home"] or 0) + (m["goals"]["away"] or 0) for m in matches)
 
         media = round(goals / len(matches), 2)
 
@@ -236,7 +241,7 @@ def seleziona_partite():
 # 🔴 LIVE
 # ==============================
 def check_matches():
-    global giocate, profit, bankroll
+    global giocate
 
     url = "https://v3.football.api-sports.io/fixtures?live=all"
     data = api_call(url)
@@ -249,10 +254,6 @@ def check_matches():
             continue
 
         minute = m["fixture"]["status"]["elapsed"]
-        goals = (m["goals"]["home"] or 0) + (m["goals"]["away"] or 0)
-
-        home = m["teams"]["home"]["name"]
-        away = m["teams"]["away"]["name"]
 
         try:
             stats = m["statistics"][0]
@@ -275,9 +276,7 @@ def check_matches():
 
                 send(f"""🔥 LIVE ENTRY
 
-{home}-{away}
 ⏱ {minute}'
-
 📈 xG: {round(xg,2)}
 ⚡ Momentum: {momentum}
 
@@ -304,9 +303,15 @@ def loop_live():
         check_matches()
         time.sleep(60)
 
-# ▶️ AVVIO
+# ▶️ AVVIO THREAD
 threading.Thread(target=loop_live).start()
 
 print("✅ BOT PRO ATTIVO")
 
-bot.infinity_polling()
+# 🔁 POLLING SICURO (ANTI-ERROR 409)
+while True:
+    try:
+        bot.infinity_polling(skip_pending=True, timeout=60, long_polling_timeout=60)
+    except Exception as e:
+        print("Errore polling:", e)
+        time.sleep(5)
