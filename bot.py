@@ -12,14 +12,13 @@ from zoneinfo import ZoneInfo
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 API_KEY = os.getenv("API_KEY")
 
-# ✅ DEBUG CORRETTO (DOPO DEFINIZIONE)
+# 🔍 DEBUG
+import os
 print("DEBUG API_KEY:", API_KEY)
+print("ENV:", dict(os.environ))
 
 if not API_KEY:
     print("❌ API KEY NON CARICATA")
-
-bot = telebot.TeleBot(TOKEN)
-tz = ZoneInfo("Europe/Rome")
 
 # ==============================
 # STATO
