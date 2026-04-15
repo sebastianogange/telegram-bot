@@ -70,6 +70,7 @@ def api_call(url):
         api_requests += 1
 
         if r.status_code != 200:
+            print("API ERROR:", r.status_code)
             return {}
 
         data = r.json()
@@ -182,7 +183,7 @@ def get_stat(stats, name):
     return 0
 
 # ==============================
-# LIVE SCAN (FIX HT)
+# LIVE SCAN (PRO)
 # ==============================
 def live_scan():
     data = api_call("https://v3.football.api-sports.io/fixtures?live=all")
@@ -208,7 +209,7 @@ def live_scan():
                 tracked_matches[match_id] = {"finished": False}
 
             # ==============================
-            # 🔴 HT FIX (NON SERVONO STATS)
+            # HT (FIX)
             # ==============================
             if minute <= 45 and total_goals >= 1:
 
@@ -234,7 +235,7 @@ Risultato: {goals_home}-{goals_away}
                 continue
 
             # ==============================
-            # STATISTICHE (SOLO QUI)
+            # STATISTICHE
             # ==============================
             stats = m.get("statistics")
             if not stats:
@@ -246,18 +247,39 @@ Risultato: {goals_home}-{goals_away}
             xg = float(get_stat(home_stats, "Expected Goals (xG)")) + \
                  float(get_stat(away_stats, "Expected Goals (xG)"))
 
-            momentum = int(get_stat(home_stats, "Dangerous Attacks")) + \
-                       int(get_stat(away_stats, "Dangerous Attacks"))
+            attacks = int(get_stat(home_stats, "Dangerous Attacks")) + \
+                      int(get_stat(away_stats, "Dangerous Attacks"))
 
             shots = int(get_stat(home_stats, "Shots on Goal")) + \
                     int(get_stat(away_stats, "Shots on Goal"))
 
+            # 🔥 MOMENTUM AVANZATO
+            momentum = attacks + (shots * 2)
+
             # ==============================
-            # 🔵 SECONDO TEMPO
+            # FILTRO INTELLIGENTE PRO
             # ==============================
             if minute >= 60 and total_goals == 0:
 
+                trigger = False
+
+                # livello 1
                 if xg >= 1.2 and momentum >= 70 and shots >= 5:
+                    trigger = True
+
+                # livello 2
+                elif xg == 0 and momentum >= 80 and shots >= 6:
+                    trigger = True
+
+                # livello 3
+                elif momentum >= 100:
+                    trigger = True
+
+                # blocco fake
+                if shots <= 2:
+                    trigger = False
+
+                if trigger:
                     send(f"""⚡ OVER 1.5 SECONDO TEMPO
 
 {match_name}
@@ -277,7 +299,8 @@ Tiri: {shots}
 
                 tracked_matches[match_id]["finished"] = True
 
-        except:
+        except Exception as e:
+            print("LIVE ERROR:", e)
             continue
 
 # ==============================
@@ -354,7 +377,7 @@ def handle(msg):
     text = msg.text.lower() if msg.text else ""
 
     if text.startswith("/start"):
-        bot.reply_to(msg, "🤖 BOT AGGIORNATO ATTIVO")
+        bot.reply_to(msg, "🤖 BOT PRO ATTIVO")
 
         if not loop_started:
             threading.Thread(target=loop, daemon=True).start()
@@ -380,6 +403,6 @@ Giocate: {giocate}
 # ==============================
 # START
 # ==============================
-print("🚀 BOT FIX HT ATTIVO")
+print("🚀 BOT PRO DEFINITIVO ATTIVO")
 
 bot.infinity_polling(skip_pending=True, none_stop=True)
