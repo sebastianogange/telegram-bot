@@ -9,9 +9,14 @@ from zoneinfo import ZoneInfo
 # ==============================
 # CONFIG
 # ==============================
-print("DEBUG API_KEY:", API_KEY)
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 API_KEY = os.getenv("API_KEY")
+
+# ✅ DEBUG CORRETTO (DOPO DEFINIZIONE)
+print("DEBUG API_KEY:", API_KEY)
+
+if not API_KEY:
+    print("❌ API KEY NON CARICATA")
 
 bot = telebot.TeleBot(TOKEN)
 tz = ZoneInfo("Europe/Rome")
@@ -104,7 +109,7 @@ def get_team_stats(team_id):
     }
 
 # ==============================
-# PRE MATCH
+# PRE MATCH (18:30)
 # ==============================
 def selezione_pro():
     today = datetime.now(tz).strftime("%Y-%m-%d")
@@ -152,7 +157,7 @@ def get_stat(stats, name):
     return 0
 
 # ==============================
-# LIVE + MOMENTUM (FIX)
+# LIVE + MOMENTUM
 # ==============================
 def live_scan():
     url = "https://v3.football.api-sports.io/fixtures?live=all"
