@@ -21,18 +21,22 @@ bot = telebot.TeleBot(TOKEN)
 tz = ZoneInfo("Europe/Rome")
 
 # ==============================
-# CAMPIONATI EUROPEI
+# 21 COMPETIZIONI EUROPEE
 # ==============================
 LEAGUES = [
+    # TOP 5
     39, 140, 135, 78, 61,
+
+    # ALTRI CAMPIONATI
     94, 88, 203, 144, 207,
     119, 71, 62, 79, 141,
-    136, 103, 98
-]
+    136, 103, 98,
 
-# opzionale: escludi coppe
-EXCLUDE_CUPS = True
-CUPS = [2, 3]
+    # COPPE EUROPEE
+    2,   # Champions League
+    3,   # Europa League
+    848  # Conference League
+]
 
 # ==============================
 # STATO
@@ -56,7 +60,7 @@ CACHE_TIME = 300
 MAX_REQUESTS = 7000
 
 # ==============================
-# API CALL
+# API CALL OTTIMIZZATA
 # ==============================
 def api_call(url):
     global api_requests
@@ -142,7 +146,7 @@ def get_team_stats(team_id):
     return stats
 
 # ==============================
-# PRE MATCH
+# PRE MATCH (EUROPA + COPPE)
 # ==============================
 def selezione_pro():
     today = datetime.now(tz).strftime("%Y-%m-%d")
@@ -151,16 +155,11 @@ def selezione_pro():
 
     scelte = []
 
-    for m in data.get("response", [])[:20]:
+    for m in data.get("response", [])[:25]:
         try:
             league_id = m["league"]["id"]
 
-            # filtro campionati
             if league_id not in LEAGUES:
-                continue
-
-            # filtro coppe
-            if EXCLUDE_CUPS and league_id in CUPS:
                 continue
 
             home_id = m["teams"]["home"]["id"]
@@ -172,6 +171,11 @@ def selezione_pro():
             media = h["gf"] + a["gf"]
             over = (h["over"] + a["over"]) / 2
 
+            # 🔥 filtro più severo per coppe
+            if league_id in [2, 3, 848]:
+                if media < 2.8 or over < 0.65:
+                    continue
+
             if media >= 2.5 and over >= 0.6:
                 scelte.append(
                     f"{m['teams']['home']['name']} - {m['teams']['away']['name']}"
@@ -181,10 +185,10 @@ def selezione_pro():
             continue
 
     if not scelte:
-        send("⚠️ Nessuna partita PRO")
+        send("⚠️ Nessuna partita PRO Europa")
         return
 
-    msg = "🔥 PRE MATCH PRO (EUROPA)\n\n"
+    msg = "🔥 PRE MATCH PRO (EUROPA + COPPE)\n\n"
 
     for s in scelte[:3]:
         msg += s + "\n"
@@ -273,7 +277,7 @@ def handle(msg):
     text = msg.text.lower() if msg.text else ""
 
     if text.startswith("/start"):
-        bot.reply_to(msg, "🤖 BOT PRO EUROPA ATTIVO")
+        bot.reply_to(msg, "🤖 BOT PRO EUROPA + COPPE ATTIVO")
 
         if not loop_started:
             threading.Thread(target=loop, daemon=True).start()
@@ -305,6 +309,6 @@ Giocate: {giocate}
 # ==============================
 # START
 # ==============================
-print("🚀 BOT EUROPA OTTIMIZZATO ATTIVO")
+print("🚀 BOT EUROPA + COPPE ATTIVO")
 
 bot.infinity_polling(skip_pending=True, none_stop=True)
