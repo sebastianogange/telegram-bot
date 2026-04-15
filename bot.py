@@ -21,7 +21,7 @@ bot = telebot.TeleBot(TOKEN)
 tz = ZoneInfo("Europe/Rome")
 
 # ==============================
-# 21 COMPETIZIONI EUROPEE
+# COMPETIZIONI EUROPEE (21)
 # ==============================
 LEAGUES = [
     # TOP 5
@@ -33,9 +33,7 @@ LEAGUES = [
     136, 103, 98,
 
     # COPPE EUROPEE
-    2,   # Champions League
-    3,   # Europa League
-    848  # Conference League
+    2, 3, 848
 ]
 
 # ==============================
@@ -67,6 +65,7 @@ def api_call(url):
 
     now = time.time()
 
+    # CACHE
     if url in cache:
         data, timestamp = cache[url]
         if now - timestamp < CACHE_TIME:
@@ -106,7 +105,7 @@ def send(msg):
         bot.send_message(last_chat_id, msg)
 
 # ==============================
-# STATS SQUADRA
+# STATS SQUADRA (CACHE)
 # ==============================
 def get_team_stats(team_id):
     if team_id in team_cache:
@@ -146,7 +145,7 @@ def get_team_stats(team_id):
     return stats
 
 # ==============================
-# PRE MATCH (EUROPA + COPPE)
+# PRE MATCH
 # ==============================
 def selezione_pro():
     today = datetime.now(tz).strftime("%Y-%m-%d")
@@ -155,28 +154,31 @@ def selezione_pro():
 
     scelte = []
 
-    for m in data.get("response", [])[:25]:
+    for m in data.get("response", []):
         try:
             league_id = m["league"]["id"]
 
+            # filtro Europa
             if league_id not in LEAGUES:
                 continue
 
             home_id = m["teams"]["home"]["id"]
             away_id = m["teams"]["away"]["id"]
 
+            # chiamate API SOLO dopo filtro
             h = get_team_stats(home_id)
             a = get_team_stats(away_id)
 
             media = h["gf"] + a["gf"]
             over = (h["over"] + a["over"]) / 2
 
-            # 🔥 filtro più severo per coppe
+            # filtro coppe più severo
             if league_id in [2, 3, 848]:
-                if media < 2.8 or over < 0.65:
+                if media < 2.6 or over < 0.6:
                     continue
 
-            if media >= 2.5 and over >= 0.6:
+            # filtro generale
+            if media >= 2.3 and over >= 0.55:
                 scelte.append(
                     f"{m['teams']['home']['name']} - {m['teams']['away']['name']}"
                 )
@@ -205,7 +207,7 @@ def get_stat(stats, name):
     return 0
 
 # ==============================
-# LIVE
+# LIVE SCAN
 # ==============================
 def live_scan():
     url = "https://v3.football.api-sports.io/fixtures?live=all"
@@ -258,6 +260,7 @@ def loop():
         now = datetime.now(tz)
 
         if now.hour == 18 and 30 <= now.minute <= 35 and last_day != now.date():
+            print("🚀 INVIO PRE MATCH")
             selezione_pro()
             last_day = now.date()
 
@@ -267,7 +270,7 @@ def loop():
         time.sleep(180)
 
 # ==============================
-# COMANDI
+# COMANDI TELEGRAM
 # ==============================
 @bot.message_handler(func=lambda m: True)
 def handle(msg):
@@ -277,7 +280,7 @@ def handle(msg):
     text = msg.text.lower() if msg.text else ""
 
     if text.startswith("/start"):
-        bot.reply_to(msg, "🤖 BOT PRO EUROPA + COPPE ATTIVO")
+        bot.reply_to(msg, "🤖 BOT PRO EUROPA ATTIVO")
 
         if not loop_started:
             threading.Thread(target=loop, daemon=True).start()
@@ -309,6 +312,6 @@ Giocate: {giocate}
 # ==============================
 # START
 # ==============================
-print("🚀 BOT EUROPA + COPPE ATTIVO")
+print("🚀 BOT DEFINITIVO ATTIVO")
 
 bot.infinity_polling(skip_pending=True, none_stop=True)
