@@ -64,4 +64,10 @@ Profit: {profit}
 # START
 # ==============================
 print("🚀 BOT ATTIVO")
-bot.infinity_polling(skip_pending=True, none_stop=True)
+while True:
+    try:
+        print("🚀 BOT ATTIVO")
+        bot.infinity_polling(skip_pending=True, none_stop=True)
+    except Exception as e:
+        print("ERRORE:", e)
+        time.sleep(5)
