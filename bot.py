@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 from flask import Flask, request
 
 # ==============================
-# 🔑 CONFIG
+# CONFIG
 # ==============================
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = int(os.getenv("CHAT_ID"))
@@ -21,18 +21,7 @@ app = Flask(__name__)
 tz = ZoneInfo("Europe/Rome")
 
 # ==============================
-# 📲 MENU COMANDI
-# ==============================
-bot.set_my_commands([
-    telebot.types.BotCommand("start", "Avvia bot"),
-    telebot.types.BotCommand("status", "Stato bot"),
-    telebot.types.BotCommand("profit", "Profit"),
-    telebot.types.BotCommand("api", "Uso API"),
-    telebot.types.BotCommand("reset", "Reset sistema")
-])
-
-# ==============================
-# 💰 BANKROLL
+# BANKROLL
 # ==============================
 bankroll = 100.0
 profit = 0.0
@@ -42,7 +31,7 @@ max_giocate = 2
 selected_matches = []
 
 # ==============================
-# 📡 API TRACKING
+# API TRACKING
 # ==============================
 api_requests = 0
 MAX_REQUESTS = 7500
@@ -59,7 +48,7 @@ def api_call(url):
         return {}
 
 # ==============================
-# 📩 SEND
+# SEND
 # ==============================
 def send(msg):
     try:
@@ -68,7 +57,7 @@ def send(msg):
         pass
 
 # ==============================
-# 🧠 xG + PROB
+# xG LOGIC
 # ==============================
 def calcola_xg(tiri, porta):
     return (tiri * 0.05) + (porta * 0.15)
@@ -86,15 +75,18 @@ def stake(prob):
     return 0
 
 # ==============================
-# 🎯 CAMPIONATI
+# LEAGUES
 # ==============================
 ALL_LEAGUES = [
-    39,140,135,78,61,88,94,144,203,207,
-    71,253,235,218,119,262,307,304,114,239
+    39,140,135,78,61,
+    88,94,144,203,207,
+    71,253,235,218,
+    119,262,307,304,
+    114,239
 ]
 
 # ==============================
-# 🧠 FILTRO STORICO
+# FILTRO STORICO
 # ==============================
 def filtra_leghe():
     migliori = []
@@ -107,7 +99,11 @@ def filtra_leghe():
         if len(matches) < 10:
             continue
 
-        goals = sum((m["goals"]["home"] or 0)+(m["goals"]["away"] or 0) for m in matches)
+        goals = sum(
+            (m["goals"]["home"] or 0) + (m["goals"]["away"] or 0)
+            for m in matches
+        )
+
         media = goals / len(matches)
 
         if media >= 2.4:
@@ -116,7 +112,7 @@ def filtra_leghe():
     return migliori if migliori else ALL_LEAGUES[:5]
 
 # ==============================
-# 📅 SELEZIONE PARTITE
+# SELEZIONE PARTITE
 # ==============================
 def seleziona():
     global selected_matches
@@ -147,14 +143,14 @@ def seleziona():
 
     msg = "📅 STRATEGIA OGGI\n\n"
 
-    for i,m in enumerate(selected_matches):
+    for i, m in enumerate(selected_matches):
         msg += f"{i+1}) {m['home']} - {m['away']}\n"
         msg += "👉 Over 0.5 HT\n👉 Se 0-0 → Over 1.5 2T\n\n"
 
     send(msg)
 
 # ==============================
-# 🔴 LIVE
+# LIVE
 # ==============================
 def live():
     global giocate, profit, bankroll
@@ -177,9 +173,10 @@ def live():
             continue
 
         xg = calcola_xg(tiri, porta)
-        momentum = porta + tiri*0.5
+        momentum = porta + tiri * 0.5
 
         if 50 <= minute <= 60 and giocate < max_giocate:
+
             if xg >= 1.2 and momentum >= 8:
 
                 p = prob_goal(xg)
@@ -197,7 +194,7 @@ def live():
 💰 Stake {round(s,2)}""")
 
 # ==============================
-# 🔁 LOOP
+# LOOP
 # ==============================
 def loop():
     last = None
@@ -213,7 +210,7 @@ def loop():
         time.sleep(60)
 
 # ==============================
-# 🌐 WEBHOOK
+# WEBHOOK
 # ==============================
 @app.route('/', methods=['GET'])
 def home():
@@ -221,55 +218,66 @@ def home():
 
 @app.route(f'/{TELEGRAM_TOKEN}', methods=['POST'])
 def webhook():
-    update = telebot.types.Update.de_json(request.stream.read().decode("utf-8"))
+    json_str = request.get_data().decode('UTF-8')
+    update = telebot.types.Update.de_json(json_str)
     bot.process_new_updates([update])
-    return "ok"
+    return '', 200
 
 # ==============================
-# 📲 COMANDI
+# COMANDI (FIX DEFINITIVO)
 # ==============================
-@bot.message_handler(commands=['start'])
-def start(msg):
-    bot.reply_to(msg, "🤖 BOT PRO ATTIVO")
+@bot.message_handler(func=lambda message: True)
+def handle_all(msg):
+    global profit, bankroll, giocate
 
-@bot.message_handler(commands=['status'])
-def status(msg):
-    bot.reply_to(msg, f"""📊 STATO
+    text = msg.text.lower() if msg.text else ""
+
+    if "@" in text:
+        text = text.split("@")[0]
+
+    if text == "/start":
+        bot.reply_to(msg, "🤖 BOT PRO ATTIVO")
+        return
+
+    if text == "/status":
+        bot.reply_to(msg, f"""📊 STATO
 
 Giocate: {giocate}
 💰 Profit: {round(profit,2)}
 🏦 Bankroll: {round(bankroll,2)}""")
+        return
 
-@bot.message_handler(commands=['profit'])
-def profit_cmd(msg):
-    bot.reply_to(msg, f"""💰 PROFIT
+    if text == "/profit":
+        bot.reply_to(msg, f"""💰 PROFIT
 
 Profit: {round(profit,2)}
 Bankroll: {round(bankroll,2)}
 Giocate: {giocate}""")
+        return
 
-@bot.message_handler(commands=['api'])
-def api(msg):
-    perc = round((api_requests/MAX_REQUESTS)*100,1)
-    bot.reply_to(msg, f"{api_requests}/{MAX_REQUESTS} ({perc}%)")
+    if text == "/api":
+        perc = round((api_requests/MAX_REQUESTS)*100,1)
+        bot.reply_to(msg, f"{api_requests}/{MAX_REQUESTS} ({perc}%)")
+        return
 
-@bot.message_handler(commands=['reset'])
-def reset(msg):
-    global profit, giocate, bankroll
-    profit = 0
-    giocate = 0
-    bankroll = 100
-    bot.reply_to(msg, "♻️ Reset completato")
+    if text == "/reset":
+        profit = 0
+        giocate = 0
+        bankroll = 100
+        bot.reply_to(msg, "♻️ Reset completato")
+        return
 
 # ==============================
-# ▶️ START
+# START
 # ==============================
 if __name__ == "__main__":
 
     requests.get(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/deleteWebhook")
     requests.get(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/setWebhook?url={WEBHOOK_URL}/{TELEGRAM_TOKEN}")
 
-    threading.Thread(target=loop).start()
+    thread = threading.Thread(target=loop)
+    thread.daemon = True
+    thread.start()
 
     port = int(os.environ.get("PORT", 8080))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=port, use_reloader=False)
