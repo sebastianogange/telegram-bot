@@ -48,11 +48,11 @@ def api_call(url):
         return {}
 
 # ==============================
-# SEND (FIX CHAT_ID)
+# SEND
 # ==============================
-def send(msg, chat_id=None):
+def send(msg):
     try:
-        bot.send_message(chat_id if chat_id else CHAT_ID, msg)
+        bot.send_message(CHAT_ID, msg)
     except:
         pass
 
@@ -210,7 +210,7 @@ def loop():
         time.sleep(60)
 
 # ==============================
-# WEBHOOK
+# WEBHOOK (GESTIONE DIRETTA)
 # ==============================
 @app.route('/', methods=['GET'])
 def home():
@@ -218,54 +218,57 @@ def home():
 
 @app.route(f'/{TELEGRAM_TOKEN}', methods=['POST'])
 def webhook():
-    json_str = request.get_data().decode('UTF-8')
-    update = telebot.types.Update.de_json(json_str)
-    bot.process_new_updates([update])
-    return '', 200
+    global profit, giocate, bankroll
 
-# ==============================
-# COMANDI (FIX DEFINITIVO)
-# ==============================
-@bot.message_handler(func=lambda message: True)
-def handle_all(msg):
-    global profit, bankroll, giocate
+    data = request.get_json()
 
-    text = msg.text.lower() if msg.text else ""
+    if not data:
+        return '', 200
+
+    message = data.get("message")
+
+    if not message:
+        return '', 200
+
+    chat_id = message["chat"]["id"]
+    text = message.get("text", "").lower()
+
+    print("📩 MSG:", text)
 
     if "@" in text:
         text = text.split("@")[0]
 
     if text == "/start":
-        bot.reply_to(msg, "🤖 BOT PRO ATTIVO")
-        return
+        bot.send_message(chat_id, "🤖 BOT PRO ATTIVO")
 
-    if text == "/status":
-        bot.reply_to(msg, f"""📊 STATO
+    elif text == "/status":
+        bot.send_message(chat_id, f"""📊 STATO
 
 Giocate: {giocate}
 💰 Profit: {round(profit,2)}
 🏦 Bankroll: {round(bankroll,2)}""")
-        return
 
-    if text == "/profit":
-        bot.reply_to(msg, f"""💰 PROFIT
+    elif text == "/profit":
+        print("🔥 PROFIT OK")
+
+        bot.send_message(chat_id, f"""💰 PROFIT
 
 Profit: {round(profit,2)}
 Bankroll: {round(bankroll,2)}
 Giocate: {giocate}""")
-        return
 
-    if text == "/api":
-        perc = round((api_requests/MAX_REQUESTS)*100,1)
-        bot.reply_to(msg, f"{api_requests}/{MAX_REQUESTS} ({perc}%)")
-        return
+    elif text == "/api":
+        perc = round((api_requests / MAX_REQUESTS) * 100, 1)
+        bot.send_message(chat_id, f"{api_requests}/{MAX_REQUESTS} ({perc}%)")
 
-    if text == "/reset":
+    elif text == "/reset":
         profit = 0
         giocate = 0
         bankroll = 100
-        bot.reply_to(msg, "♻️ Reset completato")
-        return
+
+        bot.send_message(chat_id, "♻️ Reset completato")
+
+    return '', 200
 
 # ==============================
 # START
