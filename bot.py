@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 # ==============================
 # CONFIG
 # ==============================
+print("DEBUG API_KEY:", API_KEY)
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 API_KEY = os.getenv("API_KEY")
 
