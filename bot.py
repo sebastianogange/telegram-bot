@@ -309,9 +309,13 @@ threading.Thread(target=loop_live).start()
 print("✅ BOT PRO ATTIVO")
 
 # 🔁 POLLING SICURO (ANTI-ERROR 409)
-while True:
-    try:
-        bot.infinity_polling(skip_pending=True, timeout=60, long_polling_timeout=60)
-    except Exception as e:
-        print("Errore polling:", e)
-        time.sleep(5)
+def start_bot():
+    while True:
+        try:
+            print("🤖 Polling avviato...")
+            bot.infinity_polling(skip_pending=True)
+        except Exception as e:
+            print("Errore polling:", e)
+            time.sleep(10)
+
+start_bot()
