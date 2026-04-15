@@ -210,7 +210,7 @@ def loop():
         time.sleep(60)
 
 # ==============================
-# WEBHOOK (GESTIONE DIRETTA)
+# WEBHOOK (FIX DEFINITIVO)
 # ==============================
 @app.route('/', methods=['GET'])
 def home():
@@ -222,12 +222,15 @@ def webhook():
 
     data = request.get_json()
 
+    print("📦 RAW UPDATE:", data)
+
     if not data:
         return '', 200
 
-    message = data.get("message")
+    message = data.get("message") or data.get("edited_message")
 
     if not message:
+        print("❌ Nessun message valido")
         return '', 200
 
     chat_id = message["chat"]["id"]
