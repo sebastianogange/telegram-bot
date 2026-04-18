@@ -16,49 +16,70 @@ bot = telebot.TeleBot(TOKEN)
 tz = ZoneInfo("Europe/Rome")
 
 # ==============================
-# COMPETIZIONI EUROPEE
+# LEAGUES
 # ==============================
 LEAGUES = [
-    39, 140, 135, 78, 61,
-    94, 88, 203, 144, 207,
-    119, 71, 62, 79, 141,
-    136, 103, 98,
-    2, 3, 848
+    39,140,135,78,61,94,88,203,144,207,
+    119,71,62,79,141,136,103,98,
+    2,3,848
 ]
 
 # ==============================
 # STATO
 # ==============================
 last_chat_id = None
-loop_started = False
 api_requests = 0
-
 selected_matches = set()
 tracked_matches = {}
-
-profit = 0.0
-bankroll = 100.0
-giocate = 0
 bets = {}
 
+profit = 0
+bankroll = 100
+giocate = 0
+
 # ==============================
-# CACHE
+# CACHE (NO LIVE)
 # ==============================
 cache = {}
-team_cache = {}
 CACHE_TIME = 300
 
 # ==============================
-# API CALL
+# SAFE TELEGRAM
+# ==============================
+def send(msg):
+    global last_chat_id
+    if not last_chat_id:
+        return
+
+    for i in range(3):
+        try:
+            bot.send_message(last_chat_id, msg)
+            return
+        except Exception as e:
+            print(f"❌ TELEGRAM ERROR (retry {i+1}):", e)
+            time.sleep(2)
+
+def safe_reply(msg, text):
+    for i in range(3):
+        try:
+            bot.reply_to(msg, text)
+            return
+        except Exception as e:
+            print(f"❌ REPLY ERROR (retry {i+1}):", e)
+            time.sleep(2)
+
+# ==============================
+# API CALL (NO CACHE LIVE)
 # ==============================
 def api_call(url):
     global api_requests
     now = time.time()
 
-    if url in cache:
-        data, timestamp = cache[url]
-        if now - timestamp < CACHE_TIME:
-            return data
+    if "live" not in url:
+        if url in cache:
+            data, t = cache[url]
+            if now - t < CACHE_TIME:
+                return data
 
     headers = {
         "x-apisports-key": API_KEY,
@@ -74,62 +95,46 @@ def api_call(url):
             return {}
 
         data = r.json()
-        cache[url] = (data, now)
+
+        if "live" not in url:
+            cache[url] = (data, now)
+
         return data
 
-    except:
+    except Exception as e:
+        print("❌ API ERROR:", e)
         return {}
-
-# ==============================
-# SEND
-# ==============================
-def send(msg):
-    if last_chat_id:
-        bot.send_message(last_chat_id, msg)
 
 # ==============================
 # TEAM STATS
 # ==============================
 def get_team_stats(team_id):
-    if team_id in team_cache:
-        return team_cache[team_id]
-
     url = f"https://v3.football.api-sports.io/fixtures?team={team_id}&last=10"
     data = api_call(url)
 
     matches = data.get("response", [])
-
     if not matches:
-        return {"gf": 0, "over": 0}
+        return {"gf":0,"over":0}
 
     gf = over = 0
 
     for m in matches:
         home = m["teams"]["home"]["id"] == team_id
-
         g1 = m["goals"]["home"] if home else m["goals"]["away"]
         g2 = m["goals"]["away"] if home else m["goals"]["home"]
 
         gf += g1
-        if g1 + g2 >= 3:
-            over += 1
+        if g1+g2 >=3:
+            over +=1
 
     tot = len(matches)
-
-    stats = {
-        "gf": gf / tot,
-        "over": over / tot
-    }
-
-    team_cache[team_id] = stats
-    return stats
+    return {"gf":gf/tot,"over":over/tot}
 
 # ==============================
-# PRE MATCH (11:30)
+# PREMATCH 11:30
 # ==============================
 def selezione_pro():
     global selected_matches
-
     selected_matches.clear()
 
     today = datetime.now(tz).strftime("%Y-%m-%d")
@@ -148,25 +153,17 @@ def selezione_pro():
             media = h["gf"] + a["gf"]
             over = (h["over"] + a["over"]) / 2
 
-            if m["league"]["id"] in [2,3,848]:
-                if media < 2.6 or over < 0.6:
-                    continue
-
             if media >= 2.3 and over >= 0.55:
                 scelte.append((m, media))
 
         except:
             continue
 
-    scelte = sorted(scelte, key=lambda x: x[1], reverse=True)
-
-    if not scelte:
-        send("⚠️ Nessuna partita selezionata")
-        return
+    scelte = sorted(scelte, key=lambda x:x[1], reverse=True)
 
     msg = "🔥 PARTITE SELEZIONATE\n\n"
 
-    for m, _ in scelte[:3]:
+    for m,_ in scelte[:3]:
         match_id = m["fixture"]["id"]
         selected_matches.add(match_id)
         msg += f"{m['teams']['home']['name']} - {m['teams']['away']['name']}\n"
@@ -174,7 +171,7 @@ def selezione_pro():
     send(msg)
 
 # ==============================
-# STAT SAFE
+# LIVE
 # ==============================
 def get_stat(stats, name):
     for s in stats:
@@ -182,9 +179,6 @@ def get_stat(stats, name):
             return s["value"] or 0
     return 0
 
-# ==============================
-# LIVE SCAN
-# ==============================
 def live_scan():
     data = api_call("https://v3.football.api-sports.io/fixtures?live=all")
 
@@ -199,97 +193,51 @@ def live_scan():
                 continue
 
             minute = m["fixture"]["status"]["elapsed"]
-            goals_home = m["goals"]["home"]
-            goals_away = m["goals"]["away"]
-            total_goals = goals_home + goals_away
+            g_home = m["goals"]["home"]
+            g_away = m["goals"]["away"]
+            total = g_home + g_away
 
-            match_name = f"{m['teams']['home']['name']} - {m['teams']['away']['name']}"
+            name = f"{m['teams']['home']['name']} - {m['teams']['away']['name']}"
 
             if match_id not in tracked_matches:
-                tracked_matches[match_id] = {"finished": False}
+                tracked_matches[match_id] = {"finished":False}
 
-            # ==============================
-            # HT (fix)
-            # ==============================
-            if minute <= 45 and total_goals >= 1:
-
-                if not tracked_matches[match_id].get("ht_alert_sent"):
-
-                    send(f"""✅ OVER 0.5 HT IN CASSA
-
-{match_name}
-Minuto: {minute}
-Risultato: {goals_home}-{goals_away}
-""")
-
-                    bets[match_id] = {
-                        "type": "HT",
-                        "stake": 1,
-                        "odds": 1.80,
-                        "result_checked": False
-                    }
-
+            # HT
+            if minute <=45 and total >=1:
+                if not tracked_matches[match_id].get("ht"):
+                    send(f"✅ OVER 0.5 HT\n{name}")
                     tracked_matches[match_id]["finished"] = True
-                    tracked_matches[match_id]["ht_alert_sent"] = True
-
+                    tracked_matches[match_id]["ht"] = True
                 continue
 
-            # ==============================
-            # STATS
-            # ==============================
             stats = m.get("statistics")
             if not stats:
                 continue
 
-            home_stats = stats[0]["statistics"]
-            away_stats = stats[1]["statistics"]
+            hs = stats[0]["statistics"]
+            as_ = stats[1]["statistics"]
 
-            xg = float(get_stat(home_stats, "Expected Goals (xG)")) + \
-                 float(get_stat(away_stats, "Expected Goals (xG)"))
+            xg = float(get_stat(hs,"Expected Goals (xG)")) + float(get_stat(as_,"Expected Goals (xG)"))
+            shots = int(get_stat(hs,"Shots on Goal")) + int(get_stat(as_,"Shots on Goal"))
+            attacks = int(get_stat(hs,"Dangerous Attacks")) + int(get_stat(as_,"Dangerous Attacks"))
 
-            attacks = int(get_stat(home_stats, "Dangerous Attacks")) + \
-                      int(get_stat(away_stats, "Dangerous Attacks"))
+            momentum = attacks + shots*2
 
-            shots = int(get_stat(home_stats, "Shots on Goal")) + \
-                    int(get_stat(away_stats, "Shots on Goal"))
-
-            momentum = attacks + (shots * 2)
-
-            # ==============================
-            # NUOVA LOGICA ST
-            # ==============================
-            if minute >= 60 and total_goals <= 1:
+            # ST
+            if minute >=60 and total <=1:
 
                 trigger = False
 
-                if xg >= 1.2 and momentum >= 70 and shots >= 5:
-                    trigger = True
-                elif xg == 0 and momentum >= 80 and shots >= 6:
-                    trigger = True
-                elif momentum >= 100:
-                    trigger = True
+                if xg>=1.2 and momentum>=70 and shots>=5:
+                    trigger=True
+                elif momentum>=100:
+                    trigger=True
 
-                if shots <= 2:
-                    trigger = False
+                if shots<=2:
+                    trigger=False
 
                 if trigger:
-                    send(f"""⚡ OVER 1.5 SECONDO TEMPO
-
-{match_name}
-
-Minuto: {minute}
-Risultato: {goals_home}-{goals_away}
-xG: {xg}
-Momentum: {momentum}
-Tiri: {shots}
-""")
-
-                    bets[match_id] = {
-                        "type": "ST",
-                        "stake": 1,
-                        "odds": 1.90,
-                        "result_checked": False
-                    }
+                    send(f"⚡ OVER 1.5 ST\n{name}")
 
                 tracked_matches[match_id]["finished"] = True
 
@@ -297,105 +245,53 @@ Tiri: {shots}
             print("LIVE ERROR:", e)
 
 # ==============================
-# CHECK RISULTATI
-# ==============================
-def check_results():
-    global profit, bankroll, giocate
-
-    for match_id, bet in bets.items():
-
-        if bet["result_checked"]:
-            continue
-
-        data = api_call(f"https://v3.football.api-sports.io/fixtures?id={match_id}")
-        response = data.get("response", [])
-
-        if not response:
-            continue
-
-        m = response[0]
-        status = m["fixture"]["status"]["short"]
-
-        if status not in ["FT", "AET", "PEN"]:
-            continue
-
-        goals = m["goals"]["home"] + m["goals"]["away"]
-
-        win = False
-
-        if bet["type"] == "HT":
-            win = True
-        elif bet["type"] == "ST":
-            if goals >= 1:
-                win = True
-
-        if win:
-            gain = bet["stake"] * (bet["odds"] - 1)
-            profit += gain
-            bankroll += gain
-        else:
-            profit -= bet["stake"]
-            bankroll -= bet["stake"]
-
-        giocate += 1
-        bet["result_checked"] = True
-
-# ==============================
-# LOOP
+# LOOP STABILE
 # ==============================
 def loop():
     last_day = None
 
     while True:
-        now = datetime.now(tz)
+        try:
+            now = datetime.now(tz)
 
-        if now.hour == 11 and 30 <= now.minute <= 35 and last_day != now.date():
-            selezione_pro()
-            last_day = now.date()
+            print("🔄 LOOP ATTIVO", now)
 
-        if 12 <= now.hour <= 23:
-            live_scan()
-            check_results()
+            if now.hour == 11 and 30 <= now.minute <= 35 and last_day != now.date():
+                selezione_pro()
+                last_day = now.date()
 
-        time.sleep(180)
+            if 12 <= now.hour <= 23:
+                live_scan()
+
+            time.sleep(180)
+
+        except Exception as e:
+            print("❌ LOOP ERROR:", e)
+            time.sleep(10)
 
 # ==============================
 # TELEGRAM
 # ==============================
 @bot.message_handler(func=lambda m: True)
 def handle(msg):
-    global last_chat_id, loop_started
-
+    global last_chat_id
     last_chat_id = msg.chat.id
-    text = msg.text.lower() if msg.text else ""
+    text = msg.text.lower()
 
     if text.startswith("/start"):
-        bot.reply_to(msg, "🤖 BOT PRO ATTIVO")
-
-        if not loop_started:
-            threading.Thread(target=loop, daemon=True).start()
-            loop_started = True
+        safe_reply(msg,"🤖 BOT ATTIVO")
 
     elif text.startswith("/oggi"):
         selezione_pro()
 
-    elif text.startswith("/profit"):
-        bot.reply_to(msg, f"💰 Profit: {round(profit,2)}")
-
-    elif text.startswith("/status"):
-        bot.reply_to(msg, f"""📊 STATO
-
-Bankroll: {round(bankroll,2)}
-Profit: {round(profit,2)}
-Giocate: {giocate}
-""")
-
     elif text.startswith("/api"):
-        bot.reply_to(msg, f"API calls: {api_requests}")
+        safe_reply(msg, f"API calls: {api_requests}")
 
 # ==============================
 # START
 # ==============================
-print("🚀 BOT DEFINITIVO ATTIVO (LOGICA MIGLIORATA)")
+print("🚀 BOT STABILE ATTIVO")
+
+threading.Thread(target=loop, daemon=True).start()
 
 bot.infinity_polling(skip_pending=True, none_stop=True)
