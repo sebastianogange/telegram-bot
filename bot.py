@@ -29,13 +29,9 @@ LEAGUES = [
 # ==============================
 last_chat_id = None
 api_requests = 0
+
 selected_matches = set()
 tracked_matches = {}
-bets = {}
-
-profit = 0
-bankroll = 100
-giocate = 0
 
 # ==============================
 # CACHE (NO LIVE)
@@ -44,10 +40,9 @@ cache = {}
 CACHE_TIME = 300
 
 # ==============================
-# SAFE TELEGRAM
+# TELEGRAM SAFE
 # ==============================
 def send(msg):
-    global last_chat_id
     if not last_chat_id:
         return
 
@@ -56,7 +51,7 @@ def send(msg):
             bot.send_message(last_chat_id, msg)
             return
         except Exception as e:
-            print(f"❌ TELEGRAM ERROR (retry {i+1}):", e)
+            print(f"❌ TELEGRAM ERROR retry {i+1}:", e)
             time.sleep(2)
 
 def safe_reply(msg, text):
@@ -65,7 +60,7 @@ def safe_reply(msg, text):
             bot.reply_to(msg, text)
             return
         except Exception as e:
-            print(f"❌ REPLY ERROR (retry {i+1}):", e)
+            print(f"❌ REPLY ERROR retry {i+1}:", e)
             time.sleep(2)
 
 # ==============================
@@ -171,7 +166,7 @@ def selezione_pro():
     send(msg)
 
 # ==============================
-# LIVE
+# GET STAT
 # ==============================
 def get_stat(stats, name):
     for s in stats:
@@ -179,6 +174,9 @@ def get_stat(stats, name):
             return s["value"] or 0
     return 0
 
+# ==============================
+# LIVE SCAN (FIX COMPLETO)
+# ==============================
 def live_scan():
     data = api_call("https://v3.football.api-sports.io/fixtures?live=all")
 
@@ -200,16 +198,38 @@ def live_scan():
             name = f"{m['teams']['home']['name']} - {m['teams']['away']['name']}"
 
             if match_id not in tracked_matches:
-                tracked_matches[match_id] = {"finished":False}
+                tracked_matches[match_id] = {}
 
-            # HT
-            if minute <=45 and total >=1:
-                if not tracked_matches[match_id].get("ht"):
-                    send(f"✅ OVER 0.5 HT\n{name}")
-                    tracked_matches[match_id]["finished"] = True
-                    tracked_matches[match_id]["ht"] = True
+            state = tracked_matches[match_id]
+
+            # ==============================
+            # HT ANTI VAR
+            # ==============================
+            if minute <= 45:
+
+                if total >= 1:
+
+                    if not state.get("pending_ht"):
+                        state["pending_ht"] = True
+                        state["pending_ht_goals"] = total
+                        continue
+
+                    if total >= state["pending_ht_goals"]:
+
+                        if not state.get("ht_sent"):
+                            send(f"✅ OVER 0.5 HT\n{name}")
+                            state["finished"] = True
+                            state["ht_sent"] = True
+                    else:
+                        print("HT annullato:", name)
+
+                    state["pending_ht"] = False
+
                 continue
 
+            # ==============================
+            # STATS
+            # ==============================
             stats = m.get("statistics")
             if not stats:
                 continue
@@ -223,29 +243,98 @@ def live_scan():
 
             momentum = attacks + shots*2
 
-            # ST
-            if minute >=60 and total <=1:
+            # ==============================
+            # ST (FIX BUG)
+            # ==============================
+            if minute >= 60 and total <= 1:
 
                 trigger = False
 
-                if xg>=1.2 and momentum>=70 and shots>=5:
-                    trigger=True
-                elif momentum>=100:
-                    trigger=True
+                if xg >= 1.2 and momentum >= 70 and shots >= 5:
+                    trigger = True
+                elif momentum >= 100:
+                    trigger = True
 
-                if shots<=2:
-                    trigger=False
+                if shots <= 2:
+                    trigger = False
 
                 if trigger:
-                    send(f"⚡ OVER 1.5 ST\n{name}")
+                    send(f"""⚡ OVER 1.5 ST
 
-                tracked_matches[match_id]["finished"] = True
+{name}
+Min: {minute}
+Ris: {g_home}-{g_away}
+xG: {round(xg,2)}
+Shots: {shots}
+Momentum: {momentum}
+""")
+
+                state["finished"] = True
 
         except Exception as e:
             print("LIVE ERROR:", e)
 
 # ==============================
-# LOOP STABILE
+# STATS COMMAND
+# ==============================
+def get_live_stats():
+    data = api_call("https://v3.football.api-sports.io/fixtures?live=all")
+
+    msg = "📊 STATS LIVE\n\n"
+    found = False
+
+    for m in data.get("response", []):
+        try:
+            match_id = m["fixture"]["id"]
+
+            if match_id not in selected_matches:
+                continue
+
+            minute = m["fixture"]["status"]["elapsed"]
+            g_home = m["goals"]["home"]
+            g_away = m["goals"]["away"]
+
+            name = f"{m['teams']['home']['name']} - {m['teams']['away']['name']}"
+
+            stats = m.get("statistics")
+
+            if not stats:
+                msg += f"{name}\nMin: {minute}\nRis: {g_home}-{g_away}\nNO STATS\n\n"
+                found = True
+                continue
+
+            hs = stats[0]["statistics"]
+            as_ = stats[1]["statistics"]
+
+            xg = float(get_stat(hs,"Expected Goals (xG)")) + float(get_stat(as_,"Expected Goals (xG)"))
+            shots = int(get_stat(hs,"Shots on Goal")) + int(get_stat(as_,"Shots on Goal"))
+            attacks = int(get_stat(hs,"Dangerous Attacks")) + int(get_stat(as_,"Dangerous Attacks"))
+
+            momentum = attacks + shots*2
+
+            msg += f"""{name}
+Min: {minute}
+Ris: {g_home}-{g_away}
+
+xG: {round(xg,2)}
+Shots: {shots}
+Momentum: {momentum}
+
+-----------------
+"""
+
+            found = True
+
+        except:
+            continue
+
+    if not found:
+        return "⚠️ Nessuna partita live selezionata"
+
+    return msg
+
+# ==============================
+# LOOP
 # ==============================
 def loop():
     last_day = None
@@ -253,8 +342,6 @@ def loop():
     while True:
         try:
             now = datetime.now(tz)
-
-            print("🔄 LOOP ATTIVO", now)
 
             if now.hour == 11 and 30 <= now.minute <= 35 and last_day != now.date():
                 selezione_pro()
@@ -266,7 +353,7 @@ def loop():
             time.sleep(180)
 
         except Exception as e:
-            print("❌ LOOP ERROR:", e)
+            print("LOOP ERROR:", e)
             time.sleep(10)
 
 # ==============================
@@ -276,13 +363,17 @@ def loop():
 def handle(msg):
     global last_chat_id
     last_chat_id = msg.chat.id
+
     text = msg.text.lower()
 
     if text.startswith("/start"):
-        safe_reply(msg,"🤖 BOT ATTIVO")
+        safe_reply(msg, "🤖 BOT ATTIVO")
 
     elif text.startswith("/oggi"):
         selezione_pro()
+
+    elif text.startswith("/stats"):
+        safe_reply(msg, get_live_stats())
 
     elif text.startswith("/api"):
         safe_reply(msg, f"API calls: {api_requests}")
@@ -290,7 +381,7 @@ def handle(msg):
 # ==============================
 # START
 # ==============================
-print("🚀 BOT STABILE ATTIVO")
+print("🚀 BOT COMPLETO ATTIVO")
 
 threading.Thread(target=loop, daemon=True).start()
 
