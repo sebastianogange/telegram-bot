@@ -249,13 +249,13 @@ def loop():
             time.sleep(10)
 
 # ==============================
-# TELEGRAM COMANDI
+# TELEGRAM
 # ==============================
 @bot.message_handler(func=lambda m: True)
 def handle(msg):
-    global last_chat_id
-    last_chat_id = msg.chat.id
+    global last_chat_id, bankroll, bets
 
+    last_chat_id = msg.chat.id
     text = normalize(msg.text)
 
     if text == "/start":
@@ -290,7 +290,6 @@ def handle(msg):
             bot.reply_to(msg, txt)
 
     elif text == "/reset":
-        global bankroll, bets
         bankroll = 100
         bets = []
         bot.reply_to(msg, "🔄 Reset completato")
@@ -304,7 +303,7 @@ def handle(msg):
 # ==============================
 # START
 # ==============================
-print("🚀 BOT TRADER PRO ATTIVO")
+print("🚀 BOT TRADER FIXATO ATTIVO")
 
 threading.Thread(target=loop, daemon=True).start()
 bot.infinity_polling(skip_pending=True)
